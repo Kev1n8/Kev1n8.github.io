@@ -16,6 +16,9 @@ defaults:
     values:
       layout: "post"
 
+repository:
+  Kev1n8/personal-website
+
 projects:
   sort_by: pushed
   # sort_by options:
@@ -56,3 +59,4 @@ topics:
   - name: Sass
     web_url: https://github.com/topics/sass
     image_url: https://raw.githubusercontent.com/github/explore/6c6508f34230f0ac0d49e847a326429eefbfc030/topics/sass/sass.png
+
