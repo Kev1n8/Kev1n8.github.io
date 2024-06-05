@@ -1,6 +1,6 @@
 ---
-title: "Notes of Rust"
-published: false
+title: "Notes of Git"
+published: true
 ---
 
 # Notes of Git
@@ -126,7 +126,7 @@ use `git branch switch name` to switch HEAD to branch name
 
  The following graph presents 3 different ways of merging branches.
 
-![Screenshot 2024-06-04 at 17.43.46]({{site.baseurl}}/images/Screenshot 2024-06-04 at 17.43.46.png)
+![Screenshot 2024-06-04 at 17.43.46]({{site.baseurl}}/images/Screenshot 2024-06-04 at 17.43.46.png){:height="400px" width="auto"}
 
 use `git merge feature` to merge the feature branch to the master when HEAD -> master
 
@@ -134,4 +134,4 @@ use `git rebase feature` to merge the branch in terms of rebase to the master
 
 ### Dealing Conflicts
 
-when two branches change the same line of the same file, one has to decide which version to stay.
+when two branches change the same line of the same file and attend to merge, one has to decide which version to stay.
