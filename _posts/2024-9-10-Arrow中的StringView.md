@@ -1,11 +1,11 @@
 ---
-title: "arrow-rs中的StringView"
+title: "Arrow中的StringView"
 published: true
 ---
 
-# arrow-rs中的StringView
+# Arrow中的StringView
 
-Apache Arrow是一个高效的列式数据的内存表示，本文介绍其`StringViewArray`与`StringArray`的不同。
+Apache Arrow是一个高效的列式数据的内存表示，本文所指Arrow是arrow-rs，也就是Arrow的Rust实现，本文介绍其`StringViewArray`与`StringArray`的不同，这也是Rust版本才有的特性。
 
 ## StringArray简介
 
