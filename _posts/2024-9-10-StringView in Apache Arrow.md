@@ -1,9 +1,7 @@
 ---
-title: "Arrow中的StringView"
+title: "StringView in Apache Arrow"
 published: true
 ---
-
-# Arrow中的StringView
 
 Apache Arrow是一个高效的列式数据的内存表示，本文所指Arrow是arrow-rs，也就是Arrow的Rust实现，本文介绍其`StringViewArray`与`StringArray`的不同，这也是Rust版本才有的特性。
 
@@ -22,7 +20,7 @@ Apache Arrow是一个高效的列式数据的内存表示，本文所指Arrow是
 1. 字符串编码字节数小于12时，该字符串直接内联到存放在剩余的12字节内
 2. 字节数大于12时，存放buffer编号、偏移和前缀，各占用4字节。其中，buffer编号即完整字符串数据所存放的，属于该`StringViewArray`的buffer的编号；偏移即在该buffer中第几个字节开始为该字符串数据；前缀存放了字符串前4个字节的编码数据。
 
-![Stringview](..//images/Stringview.png)
+![Stringview]({{site.baseurl}}/images/Stringview.png){:height="360px" width="auto"}
 
 ## StringArray vs StringViewArray
 
@@ -38,7 +36,7 @@ Apache Arrow是一个高效的列式数据的内存表示，本文所指Arrow是
 
 `StringViewArray`能够重复利用此前出现过的字符串，相比`StringArray`，Buffer减少了17字节（另外这里可以看出在数据量小的情况，因为`StringView`占用的内存大于一般的`OffsetSize`，如`i32, i64`，`StringView`的好处较难体现）
 
-![StringViewDesign](../images/StringViewDesign.png)
+![StringViewDesign]({{site.baseurl}}/images/StringViewDesign.png){:height="230px" width="auto"}
 
 ## StringViewArray如何构建
 
@@ -119,7 +117,7 @@ arrow提供了`StringViewArrayBuilder`来构建一个Array，而关键函数就�
 
 当然，这是从零构建一个`StringViewArray`的方法，我们还可以直接通过`generic_view_array::new_unchecked`方法来不安全地直接构造一个Array，具体见下文。
 
-## 使用StringViewArray优化`SUBSTR`方法
+## 使用StringViewArray优化SUBSTR方法
 
 `substr(str, start, [count])`可以帮助我们获得字符串的指定字串，因为`substr`的结果一定是原字符串的子集，那么如果输入的`DataType`是`StringViewArray`的话，我们就可以直接将原本的所有buffer拷贝作为新Array的buffer，同时直接操作每个`StringView`。这样做的好处是：首先，使用`StringViewArray`带来了节约内存的好处；其次，直接复制所有buffer相比通过此前`generic_array_builder`一次次`append_value`更高效。虽然buffer可能暂时会有无用的部份，但是在GC过程中，会自动把无用的部份回收掉。
 
@@ -149,7 +147,7 @@ fn make_and_append_view(
 
 // Somewhere else:
 ...
-		let views_buf = ScalarBuffer::from(views_buf);
+	let views_buf = ScalarBuffer::from(views_buf);
     let nulls_buf = null_builder.finish();
     // Safety:
     // (1) The blocks of the given views are all provided
