@@ -9,9 +9,9 @@ Apache Arrow是一个高效的列式数据的内存表示，本文所指Arrow是
 
 `StringArray`是arrow的一种基本列实例、是一列字符串数据，一个`StringArray`主要有
 
-- 一个`nullmap`指示数据是否为null
-- 一个`offset`数组指示某一行的字符串在Buffer上的位移
-- 一个配备的Buffer用来存储实际的UTF8字符串信息
+- 一个`nullmap`，指示某一行是否为null
+- 一个`offset`数组，指示某一行的字符串在Buffer上的位移
+- 一个Buffer用来存储实际的UTF8字符串数据
 
 ## 一个StringView长什么样？
 
@@ -42,7 +42,7 @@ Apache Arrow是一个高效的列式数据的内存表示，本文所指Arrow是
 
 arrow提供了`StringViewArrayBuilder`来构建一个Array，而关键函数就是`append_value(&mut self, value: impl AsRef<T::Native>)`。
 
-```Rust
+```rust
     pub fn append_value(&mut self, value: impl AsRef<T::Native>) {
         let v: &[u8] = value.as_ref().as_ref();
         let length: u32 = v.len().try_into().unwrap();
@@ -117,9 +117,15 @@ arrow提供了`StringViewArrayBuilder`来构建一个Array，而关键函数就�
 
 当然，这是从零构建一个`StringViewArray`的方法，我们还可以直接通过`generic_view_array::new_unchecked`方法来不安全地直接构造一个Array，具体见下文。
 
-## 使用StringViewArray优化SUBSTR方法
+## 使用StringView优化SUBSTR函数
 
-`substr(str, start, [count])`可以帮助我们获得字符串的指定字串，因为`substr`的结果一定是原字符串的子集，那么如果输入的`DataType`是`StringViewArray`的话，我们就可以直接将原本的所有buffer拷贝作为新Array的buffer，同时直接操作每个`StringView`。这样做的好处是：首先，使用`StringViewArray`带来了节约内存的好处；其次，直接复制所有buffer相比通过此前`generic_array_builder`一次次`append_value`更高效。虽然buffer可能暂时会有无用的部份，但是在GC过程中，会自动把无用的部份回收掉。
+`substr(str, start, [count])`可以帮助我们获得字符串的指定字串，因为`substr`的结果一定是原字符串的子集，那么如果输入的`DataType`是`StringViewArray`的话，我们就可以这样操作：
+1. 直接将原本的所有buffer拷贝作为新Array的buffer，
+2. 然后直接操作每个`StringView`， 只需要根据通过计算得到的`sub_string`的index构建view并载入`views_buffer`中
+
+这样做的好处是：
+- 使用`StringViewArray`带来了节约内存的好处
+- 直接复制所有buffer相比通过此前`generic_array_builder`一次次调用`append_value`更高效。虽然buffer可能暂时会有无用的部份，但是GC可以后续把无用的部份回收掉。
 
 下面列举一个示例函数用于手动收集view和构造`nullmap`以便在`new_unchecked`中使用：
 
@@ -154,7 +160,7 @@ fn make_and_append_view(
     // (2) Each of the range `view.offset+start..end` of view in views_buf is within
     // the bounds of each of the blocks
     unsafe {
-        let array = StringViewArray::new_unchecked(
+        let array = StringViewArray::new_unchecked(  // 在这里直接构造一个StringViewArray
             views_buf,
             string_view_array.data_buffers().to_vec(),
             nulls_buf,
@@ -163,4 +169,4 @@ fn make_and_append_view(
     }
 ...
 ```
-
+完整的优化代码可以参考[这里](https://github.com/apache/datafusion/pull/12044)。
