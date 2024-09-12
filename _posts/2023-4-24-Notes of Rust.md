@@ -3,8 +3,6 @@ title: "Notes of Rust"
 published: true
 ---
 
-# rust_notebook
-
 ## 可变和不可变变量
 
 `let mut, let `
