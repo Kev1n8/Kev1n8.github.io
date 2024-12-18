@@ -8,55 +8,37 @@ published: false
 
 ## 需求
 
-在重构前，代码结构大致如下面所示
+项目中的 `resources/src/api/apply.rs` 定义了资源的 `apply` 接口支持，在重构前，代码结构大致如下面所示
 ```rust
-pub enum SupportedResource {
-    Resource1(Resource1),
-    Resource2(Resource2),
+pub enum ApplySupportedResource {
+    DataId(DataId),
+    ResultTable(ResultTable),
+    Databus(Databus),
     // 其他变体...
 }
 
-async fn apply(config: &SupportedResource) -> Result<(), Error> {
+async fn apply(config: &ApplySupportedResource) -> Result<(), Error> {
     for config in data.config.iter() {
-        let (namespaced, result): (NamespaceName, _) = match config {
-            SupportedResource::Resource1(Resource1) => (resource1.into(), resource1.validate(&())),
-            SupportedResource::Resource2(Resource2) => (resource2.into(), resource2.validate(&())),
+        let (namespaced_ref, validate_result): (NamespaceName, _) = match config {
+            ApplySupportedResource::DataId(ref dataid) => (dataid.into(), dataid.validate(&())),
+            ApplySupportedResource::ResultTable(ref rt) => (rt.into(), rt.validate(&())),
             // 其他cases...
         };
+
+        if validate_result.is_err() {
+            errors.push((namespaced_ref, validate_result.err().unwrap()));
+        }
     }
 
     for config in data.config.iter() {
         match config {
-            SupportedResource::Resource1(r) => {
-                let result = ResourceGet::get(
-                    &context.db,
-                    Resource1::kind(),
-                    &r.metadata.namespace,
-                    &r.metadata.name,
-                )
-                .await?;
-                if let Some(mut old_obj) = result {
-                    let new_obj = r.clone();
-                    old_obj.metadata.labels.extend(new_obj.metadata.labels);
-                    old_obj
-                        .metadata
-                        .annotations
-                        .extend(new_obj.metadata.annotations);
-
-                    let new_resource1 = Resource1 {
-                        metadata: old_obj.metadata,
-                        spec: r.spec.clone(),
-                        status: None,
-                    };
-                    new_resource1.save(&context.db).await.context(DbErrSnafu)?
-                } else {
-                    r.save(&context.db).await.context(DbErrSnafu {})?
-                }
+            ApplySupportedResource::DataId(r) => {
+                // Special op.
             }
-            SupportedResource::Resource2(r) => {
+            ApplySupportedResource::ResultTable(r) => {
                 r.save(&context.db).await.context(DbErrSnafu {})?
             }
-            // 其他cases...
+            // 其他cases同rt...
         }
     }
 
@@ -69,8 +51,10 @@ async fn apply(config: &SupportedResource) -> Result<(), Error> {
 ## 任务
 
 观察两个 `match` 操作，分别做了 validate 和 save 操作，那么我们可以将这些操作隐藏到两个函数中：
-- `fn validate_config(config: &SupportedResource) -> (NamespaceName, Result<(), Report>)`
-- `async fn save_config(context: &Arc<DabContext>, config: &SupportedResource) -> Result<(), Error>`
+- `fn validate_config(config: &ApplySupportedResource) -> (NamespaceName, Result<(), Report>)`
+- `async fn save_config(context: &Arc<DabContext>, config: &ApplySupportedResource) -> Result<(), Error>`
+
+希望达到的效果：只需在一处添加需要支持的资源类型，即可自动生成所有需要的代码。
 
 Rust中有两种宏：
 - 声明宏
@@ -108,15 +92,21 @@ $rule: ($matcher) => {$expansion}
 
 先尝试写一个：
 ```rust
-macro_rules! generate_helper_functions {
+macro_rules! generate_support_resource {
     () => {
-        fn validate_config(config: &SupportedResource) -> (NamespaceName, Result<(), Report>) {
+        #[derive(serde::Deserialize, Debug, serde::Serialize)]
+        #[serde(tag = "kind")]
+        pub enum ApplySupportedResource {
+            // variants...
+        }
+
+        fn validate_config(config: &ApplySupportedResource) -> (NamespaceName, Result<(), Report>) {
             match config {
                 // cases...
             }
         }
 
-        async fn save_config(context: &Arc<DabContext>, config: &SupportedResource) -> Result<(), Error> {
+        async fn save_config(context: &Arc<DabContext>, config: &ApplySupportedResource) -> Result<(), Error> {
             // cases...
         }
     };
@@ -143,31 +133,39 @@ macro_rules! print_all {
 
 fn main() {
     let (a, b, c, d, e) = (1, 2, 3, 4, 5);
-    // 这里则会展开为：
+    print_all!(a, b, c, d, e);
+    // 这里则会展开为
     // println!("{}", a);
     // println!("{}", b); 
     // println!("{}", c); 
     // println!("{}", d); 
     // println!("{}", e); 
-    print_all!(a, b, c, d, e);
 }
 ```
 
 利用重复匹配，我们就可以使用宏对各个变体生成代码了：
 ```rust
-macro_rules! generate_helper_functions {
+macro_rules! generate_support_resource {
     // 使用标识符来接收变体列表
     ($($variant:ident),*) => {
-        fn validate_config(config: &SupportedResource) -> (NamespaceName, Result<(), Report>) {
+        #[derive(serde::Deserialize, Debug, serde::Serialize)]
+        #[serde(tag = "kind")]
+        pub enum ApplySupportedResource {
+            $(
+                $variant($variant),
+            )*
+        }
+        
+        fn validate_config(config: &ApplySupportedResource) -> (NamespaceName, Result<(), Report>) {
             match config {
                 $(
-                    SupportedResource::$variant(resource) => (Into::<NamespaceName>::into(resource), resource.validate(&())),
+                    ApplySupportedResource::$variant(resource) => (Into::<NamespaceName>::into(resource), resource.validate(&())),
                 )*
             }
         }
 
-        async fn save_config(context: &Arc<DabContext>, config: &SupportedResource) -> Result<(), Error> {
-            // Wait, 似乎Resource1和其他人不一样？
+        async fn save_config(context: &Arc<DabContext>, config: &ApplySupportedResource) -> Result<(), Error> {
+            // Wait, 似乎DataId和其他人不一样？
         }
     };
 }
@@ -175,51 +173,37 @@ macro_rules! generate_helper_functions {
 
 在第二个 `match` 也就是 save 操作的时候，`DataId` 是一个例外，那么我们就把它单拎出来，可能的一种方法是在参数指明例外情况：
 ```rust
-macro_rules! generate_helper_functions {
+macro_rules! generate_support_resource {
     // 用 `;` 来分割例外和其他变体列表
     ($exception:ident; $($variant:ident),*) => {
-        fn validate_config(config: &SupportedResource) -> (NamespaceName, Result<(), Report>) {
+        #[derive(serde::Deserialize, Debug, serde::Serialize)]
+        #[serde(tag = "kind")]
+        pub enum ApplySupportedResource {
+            $exception($exception),
+            $(
+                $variant($variant),
+            )*
+        }
+
+        fn validate_config(config: &ApplySupportedResource) -> (NamespaceName, Result<(), Report>) {
             match config {
                 // 因为单拎出来了，要记得匹配
-                SupportedResource::$exception(resource) => (Into::<NamespaceName>::into(resource), resource.validate(&())),
+                ApplySupportedResource::$exception(resource) => (Into::<NamespaceName>::into(resource), resource.validate(&())),
                 $(
-                    SupportedResource::$variant(resource) => (Into::<NamespaceName>::into(resource), resource.validate(&())),
+                    ApplySupportedResource::$variant(resource) => (Into::<NamespaceName>::into(resource), resource.validate(&())),
                 )*
             }
         }
 
-        async fn save_config(context: &Arc<DabContext>, config: &SupportedResource) -> Result<(), Error> {
+        async fn save_config(context: &Arc<DabContext>, config: &ApplySupportedResource) -> Result<(), Error> {
             match config {
                 // 例外单独处理
-                SupportedResource::$exception(resource1) => {
-                    let result = ResourceGet::get(
-                        &context.db,
-                        Resource1::kind(),
-                        &resource1.metadata.namespace,
-                        &resource1.metadata.name,
-                    )
-                    .await?;
-                    if let Some(mut old_obj) = result {
-                        let new_obj = resource1.clone();
-                        old_obj.metadata.labels.extend(new_obj.metadata.labels);
-                        old_obj
-                            .metadata
-                            .annotations
-                            .extend(new_obj.metadata.annotations);
-
-                        let new_resource1 = Resource1 {
-                            metadata: old_obj.metadata,
-                            spec: resource1.spec.clone(),
-                            status: None,
-                        };
-                        new_resource1.save(&context.db).await.context(DbErrSnafu {})?
-                    } else {
-                        resource1.save(&context.db).await.context(DbErrSnafu {})?
-                    }
+                ApplySupportedResource::$exception(data_id) => {
+                    // Special op.
                 }
                 // 列表的其他变体保持一致
                 $(
-                    SupportedResource::$variant(resource) => {
+                    ApplySupportedResource::$variant(resource) => {
                         resource.save(&context.db).await.context(DbErrSnafu {})?
                     }
                 )*
@@ -232,7 +216,8 @@ macro_rules! generate_helper_functions {
 
 ## 效果
 
-如果需要对一个新的资源支持 `apply`，只需添加对应变体，在 `generate_helper_functions!` 列表加入新增的变体即可。
+如果需要对一个新的资源支持 `apply`，只需要在 `generate_support_resource` 宏参数重添加元素即可。
 
 ----
 参考PR：https://github.com/TencentBlueKing/bk-base/pull/3015/
+
